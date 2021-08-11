@@ -1,11 +1,14 @@
 from __future__ import annotations
-from bigen import Gen
-from typing import Any, List, cast
+from typing import List
 from abc import ABC
 from dataclasses import dataclass
+import math
+
+MIN_VAL = 0
+MAX_VAL = 9
 
 
-class BST(ABC):
+class Tree(ABC):
     def is_bst(self) -> bool:
         ...
 
@@ -20,7 +23,7 @@ class BST(ABC):
 
 
 @dataclass
-class Leaf(BST):
+class Leaf(Tree):
     def is_bst(self) -> bool:
         return True
 
@@ -38,10 +41,10 @@ class Leaf(BST):
 
 
 @dataclass
-class Node(BST):
-    left: BST
+class Node(Tree):
+    left: Tree
     value: int
-    right: BST
+    right: Tree
 
     def is_bst(self) -> bool:
         return (
@@ -65,7 +68,7 @@ class Node(BST):
 
 
 @dataclass
-class Hole(BST):
+class Hole(Tree):
     def is_bst(self) -> bool:
         return True
 
@@ -90,7 +93,7 @@ class Choice(ABC):
 @dataclass
 class ChooseLeaf(Choice):
     def __repr__(self) -> str:
-        return "L_"
+        return "L"
 
 
 @dataclass
@@ -101,11 +104,8 @@ class ChooseNode(Choice):
         return "N" + str(self.value)
 
 
-MAX_DEPTH = 4
-
-
-def parse_choices(choices: List[Choice]) -> List[BST]:
-    def expand_hole(c: Choice, t: BST) -> BST:
+def parse_choices(choices: List[Choice]) -> List[Tree]:
+    def expand_hole(c: Choice, t: Tree) -> Tree:
         if isinstance(t, Leaf):
             return Leaf()
         elif isinstance(t, Node):
@@ -120,15 +120,49 @@ def parse_choices(choices: List[Choice]) -> List[BST]:
             else:
                 return Leaf()
 
-    trees: List[BST] = [Hole()]
+    trees: List[Tree] = [Hole()]
     for choice in choices:
         trees.append(expand_hole(choice, trees[-1]))
     return trees
 
 
+def choose(n, k):
+    return math.factorial(n) / (math.factorial(k) * math.factorial(n - k))
+
+
+def catalan(n):
+    return (1 / (n + 1)) * choose(2 * n, n)
+
+
+def count_bsts(n):
+    return sum(catalan(k) * choose(n, k) for k in range(1, n + 1)) + 1
+
+
+def fitness(tree: Tree, g_minimum=MIN_VAL, g_maximum=MAX_VAL) -> float:
+    if not tree.is_bst():
+        return 0
+
+    if tree.is_complete():
+        return 1
+
+    def count_completions(
+        t: Tree, minimum: int = g_minimum, maximum: int = g_maximum
+    ) -> float:
+        if isinstance(t, Leaf):
+            return 1
+
+        elif isinstance(t, Node):
+            l = count_completions(t.left, minimum=minimum, maximum=t.value - 1)
+            r = count_completions(t.right, minimum=t.value + 1, maximum=maximum)
+            return l * r
+
+        else:  # isinstance(t, Hole):
+            return count_bsts(maximum - minimum + 1)
+
+    return count_completions(tree) / count_bsts(g_maximum - g_minimum + 1)
+
+
 if __name__ == "__main__":
-    print(
-        parse_choices(
-            [ChooseNode(3), ChooseLeaf(), ChooseNode(5), ChooseLeaf(), ChooseLeaf()]
-        )
-    )
+    choices = [ChooseNode(5), ChooseNode(1), ChooseLeaf(), ChooseLeaf(), ChooseLeaf()]
+    for partial in parse_choices(choices):
+        print(f"{fitness(partial):.6f}: {partial}")
