@@ -9,7 +9,10 @@ from bst import *
 torch.manual_seed(1)
 
 d_in = 11
-d_hidden = 11
+d_hidden = 100
+device = torch.device("cuda", 0)
+hidden_0 = torch.zeros(1, 1, d_hidden).to(device)
+cell_0 = torch.zeros(1, 1, d_hidden).to(device)
 
 def num_as_onehot(n):
     ret = torch.zeros(1, d_in)
@@ -31,9 +34,7 @@ choice_as_vec(ChooseNode(5))
 def eval(input_choices, lstm, fc):
     input_onehot = tuple(choice.to_tensor().unsqueeze(0).float() for choice in input_choices)
 
-    inputs_stacked = torch.stack(input_onehot, 0)
-    hidden_0 = torch.zeros(1, 1, d_hidden)
-    cell_0 = torch.zeros(1, 1, d_hidden)
+    inputs_stacked = torch.stack(input_onehot, 0).to(device)
     
     out, (hidden_end, cell_end) = lstm(inputs_stacked, (hidden_0, cell_0))
 
@@ -50,19 +51,19 @@ def compute_loss(input_choices, probs):
             dtype = torch.float,
         )
         for choice in Choice.all_choices()
-	])
+	]).to(device)
 
     return -torch.dot(probs, fitnesses)
 
-lstm = nn.LSTM(d_in, d_hidden)
-fc = nn.Linear(d_hidden, d_in)
+lstm = nn.LSTM(d_in, d_hidden).to(device)
+fc = nn.Linear(d_hidden, d_in).to(device)
 all_params = tuple(lstm.parameters()) + tuple(fc.parameters())
 
 optimizer = optim.SGD(all_params, lr=0.1)
 
 all_tests = []
 all_failures = []
-for epoch_num in range(100):
+for epoch_num in range(10000):
     lstm.zero_grad()
     fc.zero_grad()
     epoch_loss = 0
@@ -73,7 +74,9 @@ for epoch_num in range(100):
         trial_loss = 0
         while True: # Build a new test
             probs = eval(so_far, lstm, fc)
-            trial_loss += compute_loss(so_far, probs)
+            loss = compute_loss(so_far, probs)
+            loss.backward()
+            trial_loss += loss.clone().detach()
             so_far.append(Choice.sample_from_tensor(probs))
             partial = parse_choices(so_far)[-1]
             if partial.is_complete():
@@ -82,14 +85,18 @@ for epoch_num in range(100):
             if not partial.is_bst():
                 failures += 1
                 break
-        
+
         epoch_loss += trial_loss
 
     print(epoch_loss)
     all_tests.append(tests)
     all_failures.append(failures)
-    epoch_loss.backward()
     optimizer.step()
 
 all_tests
-all_failures
+n = -101
+for i in range(-100, 0):
+    if all_failures[i] == 9:
+        print(i)
+all_failures[n:n+100]
+all_tests[-39]
