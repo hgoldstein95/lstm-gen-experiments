@@ -3,6 +3,7 @@ from typing import List
 from abc import ABC
 from dataclasses import dataclass
 import math
+import torch
 
 MIN_VAL = 0
 MAX_VAL = 9
@@ -86,12 +87,38 @@ class Hole(Tree):
 
 
 class Choice(ABC):
-    def print(self) -> str:
+    def to_tensor(self) -> torch.Tensor:
         ...
+
+    @staticmethod
+    def sample_from_tensor(x: torch.Tensor) -> Choice:
+        x = x[:MAX_VAL - MIN_VAL + 2] # Ignore hidden state
+        dist = torch.distributions.Categorical(x)
+        choice_idx = dist.sample().item()
+        if choice_idx == 0:
+            return ChooseLeaf()
+        else:
+            return ChooseNode(choice_idx - 1 + MIN_VAL)
+
+    @staticmethod
+    def argmax_from_tensor(x: torch.Tensor) -> Choice:
+        x = x[:MAX_VAL - MIN_VAL + 2] # Ignore hidden state
+        choice_idx = torch.argmax(x).item()
+        if choice_idx == 0:
+            return ChooseLeaf()
+        else:
+            return ChooseNode(choice_idx - 1 + MIN_VAL)
+
+    @staticmethod
+    def all_choices():
+        return [ChooseLeaf()] + [ChooseNode(n) for n in range(MIN_VAL, MAX_VAL + 1)]
 
 
 @dataclass
 class ChooseLeaf(Choice):
+    def to_tensor(self) -> torch.Tensor:
+        return torch.tensor([1] + [0 for _ in range(MIN_VAL, MAX_VAL + 1)])
+
     def __repr__(self) -> str:
         return "L"
 
@@ -99,6 +126,9 @@ class ChooseLeaf(Choice):
 @dataclass
 class ChooseNode(Choice):
     value: int
+
+    def to_tensor(self) -> torch.Tensor:
+        return torch.tensor([0] + [(1 if i == self.value else 0) for i in range(MIN_VAL, MAX_VAL + 1)])
 
     def __repr__(self) -> str:
         return "N" + str(self.value)
@@ -141,9 +171,6 @@ def count_bsts(n):
 def fitness(tree: Tree, g_minimum=MIN_VAL, g_maximum=MAX_VAL) -> float:
     if not tree.is_bst():
         return 0
-
-    if tree.is_complete():
-        return 1
 
     def count_completions(
         t: Tree, minimum: int = g_minimum, maximum: int = g_maximum
